@@ -28,6 +28,12 @@ app.get('/icon.svg', (req, res) => {
   res.sendFile(path.join(__dirname, 'icon.svg'));
 });
 
+// Icons for TRMNL's light and dark UI: /icon-light.svg|png (black) and /icon-dark.svg|png (white), transparent.
+app.get(/^\/icon-(light|dark)\.(svg|png)$/, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.sendFile(path.join(__dirname, 'icons', `icon-${req.params[0]}.${req.params[1]}`));
+});
+
 // ---------------------------------------------------------------------------
 // Installation (OAuth)
 // ---------------------------------------------------------------------------
