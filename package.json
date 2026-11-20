@@ -1,0 +1,21 @@
+{
+  "name": "trmnl-skytonight",
+  "version": "1.0.0",
+  "description": "TRMNL plugin that shows tonight's sky: moon phase, twilight, cloud cover, stargazing verdict and visible planets",
+  "main": "server.js",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test",
+    "preview": "node scripts/preview.js"
+  },
+  "keywords": ["trmnl", "plugin", "astronomy", "moon", "stargazing"],
+  "license": "MIT",
+  "dependencies": {
+    "astronomy-engine": "^2.1.19",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2"
+  }
+}

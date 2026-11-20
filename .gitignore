@@ -1,0 +1,12 @@
+node_modules/
+.env
+.DS_Store
+*.log
+preview/
+secrets/
+data/
+CLAUDE.md
+.claude/
+
+# server-specific setup (host, user, paths) stays local
+deployment/private/
