@@ -28,10 +28,11 @@ app.get('/icon.svg', (req, res) => {
   res.sendFile(path.join(__dirname, 'icon.svg'));
 });
 
-// Icons for TRMNL's light and dark UI: /icon-light.svg|png (black) and /icon-dark.svg|png (white), transparent.
-app.get(/^\/icon-(light|dark)\.(svg|png)$/, (req, res) => {
+// /icon.png: white symbol on a black tile, readable in light and dark UIs (/icon.svg is the same).
+// /icon-light.svg|png (black) and /icon-dark.svg|png (white) are transparent single-colour variants.
+app.get(/^\/icon(-light|-dark)?\.(svg|png)$/, (req, res) => {
   res.set('Cache-Control', 'public, max-age=86400');
-  res.sendFile(path.join(__dirname, 'icons', `icon-${req.params[0]}.${req.params[1]}`));
+  res.sendFile(path.join(__dirname, 'icons', `icon${req.params[0] || ''}.${req.params[1]}`));
 });
 
 // ---------------------------------------------------------------------------
