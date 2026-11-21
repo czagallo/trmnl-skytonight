@@ -237,6 +237,21 @@ test('getClouds keeps the last forecast when a refresh fails, and does not hamme
   assert.equal(failing, 1); // retries only after RETRY_MS
 });
 
+test('with nothing cached, a failed fetch is retried after a minute, not five', async () => {
+  weather.clearCache();
+  const now = NOV19;
+  let calls = 0;
+  const bad = async () => {
+    calls++;
+    throw new weather.WeatherError('network', 'timeout');
+  };
+  await weather.getClouds(5, 6, { now, fetcher: bad });
+  await weather.getClouds(5, 6, { now: now + 30e3, fetcher: bad });
+  assert.equal(calls, 1);
+  const r = await weather.getClouds(5, 6, { now: now + 61e3, fetcher: async () => ({ times: [now], cover: [7] }) });
+  assert.deepEqual(r.data.cover, [7]);
+});
+
 test('a slow upstream with an empty cache is cut off after waitMs', async () => {
   weather.clearCache();
   const t0 = Date.now();

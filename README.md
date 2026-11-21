@@ -58,6 +58,14 @@ npm run preview -- --live                     # real clouds right now for Vienna
 curl -X POST http://127.0.0.1:3014/markup --data-urlencode 'trmnl[user][time_zone_iana]=Europe/Vienna'
 ```
 
+The real TRMNL framework CSS can be checked with [trmnl-plugin-preview](https://github.com/danmunoz/trmnl-plugin-preview)
+(Node 24), which switches between TRMNL OG and X, landscape and portrait:
+
+```bash
+npx trmnl-plugin-preview --target http://127.0.0.1:3014/markup --user-uuid preview
+# PNGs: http://127.0.0.1:4568/render/quadrant.png?model=v2&orientation=portrait   (model: og_png | v2)
+```
+
 Code: `src/sky.js` (sun, moon, planets), `src/weather.js` (Open-Meteo, cache), `src/view.js` (verdict, what the screen
 shows), `src/markup.js` (layouts and the moon drawing), `src/location.js` (settings validation), `src/store.js` (user
 settings), `src/time.js` (time zones).

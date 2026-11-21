@@ -11,6 +11,21 @@ const { HOUR, clock, duration } = require('./time');
 
 const DAY = 24 * HOUR;
 
+// Type ramps. Base = TRMNL OG (800x480), lg: = TRMNL X, lg:portrait: = TRMNL X held upright, which has the most room
+// and gets the biggest type. "large" is the full view, "small" the halves and the quadrant.
+const T = {
+  label: 'label lg:label--large lg:portrait:label--xlarge',
+  labelS: 'label label--small lg:label--large lg:portrait:label--xlarge',
+  title: 'title lg:title--large lg:portrait:title--xlarge',
+  titleS: 'title title--small lg:title--large lg:portrait:title--xlarge',
+  value: 'value value--small lg:value--large lg:portrait:value--xlarge',
+  valueS: 'value value--xsmall lg:value--base lg:portrait:value--large',
+  // The quadrant is the same size on X in either orientation, so it skips the portrait step.
+  labelQ: 'label label--small lg:label--large',
+  titleQ: 'title title--small lg:title--large',
+  valueQ: 'value value--xsmall lg:value--base',
+};
+
 function esc(s) {
   return String(s).replace(
     /[&<>"'{}]/g,
@@ -122,6 +137,13 @@ function moonRiseSet(v, ctx) {
   return items.map(([n, t]) => [n, clock(t, ctx.tz)]);
 }
 
+// "Set 02:04" / "Rise 13:03" as stacked rows: reads better than one long line and grows with the screen.
+function riseSetRows(v, ctx, cls) {
+  return `<div class="st-rows">${moonRiseSet(v, ctx)
+    .map(([n, t]) => `<span class="${cls}">${esc(n)}</span><span class="${cls} value--tnums" style="font-weight:700">${esc(t)}</span>`)
+    .join('')}</div>`;
+}
+
 // ---------------------------------------------------------------------------
 // Cloud chart with darkness and moon bands
 // ---------------------------------------------------------------------------
@@ -203,26 +225,24 @@ function moonBand(v) {
   return band(rects, uid());
 }
 
-function hourLabels(v, small) {
-  const cls = small ? 'label label--small lg:label--base' : 'label label--small lg:label--large';
+function hourLabels(v, cls) {
   return `<div style="display:grid;grid-template-columns:repeat(13,1fr)">${v.night.hours
     .map((h, i) => `<span class="${cls} value--tnums" style="text-align:center;white-space:nowrap">${i % 2 === 0 ? String(h.hour).padStart(2, '0') : ''}</span>`)
     .join('')}</div>`;
 }
 
 // size: 'large' (full) | 'small' (halves). bands: show the Dark/Moon strips.
-function cloudChart(v, { small = false, bands = true } = {}) {
-  const lbl = small ? 'label label--small lg:label--base' : 'label label--small lg:label--large';
-  const bandH = small ? '0.55em' : '0.7em';
+function cloudChart(v, { small = false, bands = true, label = T.labelS } = {}) {
+  const lbl = label;
   const unavailable = !v.clouds.available
-    ? `<div class="st-center" style="position:absolute;inset:0"><span class="label lg:label--large" style="background:white;padding:2px 6px">Cloud forecast unavailable</span></div>`
+    ? `<div class="st-center" style="position:absolute;inset:0"><span class="${small ? lbl : T.label}" style="background:white;padding:2px 6px">Cloud forecast unavailable</span></div>`
     : '';
   return `<div class="st-chart">
 <span class="${lbl}">Clouds</span>
 <div style="position:relative;min-height:0">${cloudBars(v)}${unavailable}</div>
-${bands ? `<span class="${lbl}">Dark</span><div style="height:${bandH};align-self:center">${darkBand(v)}</div>
-<span class="${lbl}">Moon</span><div style="height:${bandH};align-self:center">${moonBand(v)}</div>` : ''}
-<span></span>${hourLabels(v, small)}
+${bands ? `<span class="${lbl}">Dark</span><div class="st-band${small ? ' st-band--small' : ''}">${darkBand(v)}</div>
+<span class="${lbl}">Moon</span><div class="st-band${small ? ' st-band--small' : ''}">${moonBand(v)}</div>` : ''}
+<span></span>${hourLabels(v, lbl)}
 </div>`;
 }
 
@@ -231,9 +251,9 @@ ${bands ? `<span class="${lbl}">Dark</span><div style="height:${bandH};align-sel
 // ---------------------------------------------------------------------------
 
 function verdictBlock(v, { size = 'large' } = {}) {
-  const pill = size === 'large' ? 'label lg:label--large' : 'label label--small lg:label--base';
-  const head = size === 'large' ? 'title lg:title--large' : 'title title--small lg:title--base';
-  const sub = size === 'large' ? 'label lg:label--large' : 'label label--small lg:label--base';
+  const pill = { large: T.label, small: T.labelS, quad: T.labelQ }[size];
+  const head = { large: T.title, small: T.titleS, quad: T.titleQ }[size];
+  const sub = pill;
   const vd = v.verdict;
   const main = vd.clouds || vd.text;
   const second = vd.clouds ? vd.moon : null;
@@ -248,9 +268,9 @@ ${second ? `<span class="${sub}" style="display:block;margin-top:2px;overflow:hi
 
 function moonFacts(v, ctx, { size = 'large' } = {}) {
   const m = v.night.moon;
-  const name = size === 'large' ? 'title lg:title--large' : 'title title--small lg:title--base';
-  const big = size === 'large' ? 'value value--small lg:value--large' : 'value value--xsmall lg:value--small';
-  const lbl = size === 'large' ? 'label lg:label--large' : 'label label--small lg:label--base';
+  const name = size === 'large' ? T.title : T.titleS;
+  const big = size === 'large' ? T.value : T.valueS;
+  const lbl = size === 'large' ? T.label : T.labelS;
   const rs = moonRiseSet(v, ctx)
     .map(([n, t]) => `<span style="white-space:nowrap">${esc(n)} <b>${esc(t)}</b></span>`)
     .join(' ');
@@ -278,15 +298,15 @@ function sunRows(v, ctx) {
 }
 
 function sunStats(v, ctx, { small = false } = {}) {
-  const lbl = small ? 'label label--small lg:label--base' : 'label lg:label--large';
-  const val = small ? 'label label--small lg:label--base value--tnums' : 'label lg:label--large value--tnums';
+  const lbl = small ? T.labelS : T.label;
+  const val = small ? `${T.labelS} value--tnums` : `${T.label} value--tnums`;
   return `<div class="st-sun">${sunRows(v, ctx)
     .map(([k, t]) => `<span class="${lbl}">${esc(k)}</span><span class="${val}" style="font-weight:700;white-space:nowrap;text-align:right">${esc(t)}</span>`)
     .join('')}</div>`;
 }
 
 function planetList(v, ctx, { max = 5, small = false, best = true } = {}) {
-  const lbl = small ? 'label label--small lg:label--base' : 'label lg:label--large';
+  const lbl = small ? T.labelS : T.label;
   const list = v.night.planets.slice(0, max);
   if (!list.length) return `<span class="${lbl}">No bright planets after dark</span>`;
   const cell = (s, extra = '') => `<span class="${lbl} value--tnums" style="white-space:nowrap;${extra}">${s}</span>`;
@@ -302,7 +322,7 @@ function planetList(v, ctx, { max = 5, small = false, best = true } = {}) {
 }
 
 function heading(text, small) {
-  return `<span class="${small ? 'label label--small lg:label--base' : 'label lg:label--large'}" style="display:block;border-bottom:2px solid currentColor;font-weight:700;margin-bottom:2px">${esc(text)}</span>`;
+  return `<span class="${small ? T.labelS : T.label}" style="display:block;border-bottom:2px solid currentColor;font-weight:700;margin-bottom:2px">${esc(text)}</span>`;
 }
 
 function titleBar(v, ctx) {
@@ -330,7 +350,14 @@ const BASE_CSS = `.st-grid{display:grid;width:100%;height:100%;min-width:0;min-h
 .st-sun{display:grid;grid-template-columns:1fr auto;column-gap:10px;row-gap:1px;align-content:start}
 .st-planets{display:grid;grid-template-columns:repeat(4,auto);justify-content:space-between;column-gap:10px;row-gap:1px;align-content:start}
 .st-planets--nobest{grid-template-columns:repeat(3,auto);justify-content:start;column-gap:1em}
-.st-center{display:flex;align-items:center;justify-content:center}`;
+.st-center{display:flex;align-items:center;justify-content:center}
+.st-band{height:10px;align-self:center}
+.st-band--small{height:8px}
+.screen--lg .st-band{height:16px}
+.screen--lg .st-band--small{height:13px}
+.screen--lg.screen--portrait .st-band{height:20px}
+.st-rows{display:grid;grid-template-columns:auto auto;justify-content:start;column-gap:0.8em;row-gap:0;align-content:start}
+.st-rows>span{white-space:nowrap}`;
 
 function style(css) {
   return `<style>${BASE_CSS}\n${css}</style>`;
@@ -380,7 +407,7 @@ grid-template-areas:"moon facts" "verdict verdict" "chart chart"}
 
 function halfHorizontal(v, ctx) {
   const m = v.night.moon;
-  const lbl = 'label label--small lg:label--base';
+  const lbl = T.labelS;
   const body = `<div class="st-grid st-hh">
 <div class="st-moon" style="grid-area:moon">${moonSvg(m, { south: v.location.lat < 0 })}</div>
 <div class="st-facts-slot" style="grid-area:facts;align-items:center">${moonFacts(v, ctx, { size: 'small' })}</div>
@@ -388,8 +415,9 @@ function halfHorizontal(v, ctx) {
 <div style="grid-area:chart">${cloudChart(v, { small: true })}</div>
 <div class="st-side" style="grid-area:side">
 <div>
-<span class="title title--small lg:title--base" style="display:block;white-space:nowrap">${esc(m.name)} · ${Math.round(m.fraction * 100)}%</span>
-<span class="${lbl}" style="display:block">${moonRiseSet(v, ctx).map(([n, t]) => `${esc(n)} <b>${esc(t)}</b>`).join(' · ')}</span>
+<span class="${T.titleS}" style="display:block;white-space:nowrap">${esc(m.name)}</span>
+<span class="${lbl} value--tnums" style="display:block;font-weight:700;margin-bottom:2px">${Math.round(m.fraction * 100)}% lit</span>
+${riseSetRows(v, ctx, lbl)}
 </div>
 <div>${heading('Planets', true)}${planetList(v, ctx, { max: 5, small: true, best: false })}</div>
 </div>
@@ -405,7 +433,11 @@ grid-template-areas:"moon" "facts" "verdict" "chart" "sun" "planets";row-gap:10p
 .st-hv .st-sun-slot{display:none}
 .screen--portrait .st-hv .st-sun-slot{display:block}
 .screen--portrait .st-hv .st-facts{width:100%;align-items:center;text-align:center}
-.screen--portrait .st-hv .st-facts>span{justify-content:center}`;
+.screen--portrait .st-hv .st-facts>span{justify-content:center}
+.screen--portrait .st-hv .st-sun{grid-template-columns:auto auto;justify-content:center;column-gap:1.5em}
+/* TRMNL X upright: the type is bigger, so the sun times give their room to the chart. */
+.screen--lg.screen--portrait .st-hv{grid-template-rows:17% auto auto minmax(0,1fr) auto;grid-template-areas:"moon" "facts" "verdict" "chart" "planets"}
+.screen--lg.screen--portrait .st-hv .st-sun-slot{display:none}`;
 
 function halfVertical(v, ctx) {
   const body = `<div class="st-grid st-hv">
@@ -421,21 +453,26 @@ function halfVertical(v, ctx) {
 
 const Q_CSS = `.st-q{grid-template-columns:38% 1fr;grid-template-rows:minmax(0,1fr) auto;column-gap:14px;row-gap:6px;
 grid-template-areas:"moon facts" "verdict verdict"}
-.screen--lg .st-q{column-gap:24px;row-gap:12px}
 .screen--portrait .st-q{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto auto;grid-template-areas:"moon" "facts" "verdict";row-gap:8px}
-.screen--portrait .st-q .st-facts{align-items:center;text-align:center}`;
+.screen--portrait .st-q .st-facts{align-items:center;text-align:center}
+.screen--portrait .st-q .st-rows{justify-content:center}
+/* TRMNL X has room for tonight's cloud chart under the moon. */
+.screen--lg .st-q{grid-template-columns:34% 1fr;grid-template-rows:auto auto minmax(0,1fr);grid-template-areas:"moon facts" "moon verdict" "chart chart";column-gap:24px;row-gap:12px}
+.screen--lg .st-q .st-facts{justify-content:end}
+.screen--lg.screen--portrait .st-q{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto auto minmax(0,0.9fr);grid-template-areas:"moon" "facts" "verdict" "chart";row-gap:12px}`;
 
 function quadrant(v, ctx) {
   const m = v.night.moon;
-  const lbl = 'label label--small lg:label--base';
+  const lbl = T.labelQ;
   const body = `<div class="st-grid st-q">
 <div class="st-moon" style="grid-area:moon">${moonSvg(m, { south: v.location.lat < 0 })}</div>
 <div class="st-facts" style="grid-area:facts">
-<span class="title title--small lg:title--base">${esc(m.name)}</span>
-<span class="value value--xsmall lg:value--small value--tnums" style="display:block">${Math.round(m.fraction * 100)}%<span class="${lbl}" style="display:inline">&nbsp;lit</span></span>
-<span class="${lbl}" style="display:block">${moonRiseSet(v, ctx).map(([n, t]) => `${esc(n)} <b>${esc(t)}</b>`).join(' · ')}</span>
+<span class="${T.titleQ}" style="white-space:nowrap">${esc(m.name)}</span>
+<span class="${T.valueQ} value--tnums" style="display:block">${Math.round(m.fraction * 100)}%<span class="${lbl}" style="display:inline">&nbsp;lit</span></span>
+${riseSetRows(v, ctx, lbl)}
 </div>
-<div style="grid-area:verdict">${verdictBlock(v, { size: 'small' })}</div>
+<div style="grid-area:verdict">${verdictBlock(v, { size: 'quad' })}</div>
+<div class="hidden lg:block" style="grid-area:chart">${cloudChart(v, { small: true, bands: false, label: T.labelQ })}</div>
 </div>`;
   return wrap('quadrant', Q_CSS, body, v, ctx);
 }

@@ -6,7 +6,8 @@
 
 const API = 'https://api.open-meteo.com/v1/forecast';
 const CACHE_MS = 30 * 60 * 1000;
-const RETRY_MS = 5 * 60 * 1000; // after a failed attempt
+const RETRY_MS = 5 * 60 * 1000; // after a failed attempt while older data is still shown
+const RETRY_EMPTY_MS = 60 * 1000; // after a failed attempt with nothing to show
 const TIMEOUT_MS = 6000;
 const WAIT_MS = 4000;
 const MAX_ENTRIES = 1000;
@@ -101,7 +102,7 @@ function refresh(e, lat, lon, now, fetcher) {
     })
     .catch((err) => {
       e.error = err.code || 'network';
-      console.error(`Open-Meteo ${locationKey(lat, lon)} failed: ${err.message}`);
+      console.error(`Open-Meteo request failed: ${err.message}`);
     })
     .finally(() => {
       e.inflight = null;
@@ -117,7 +118,7 @@ async function getClouds(lat, lon, { now = Date.now(), fetcher = fetchForecast, 
     if (cache.size >= MAX_ENTRIES) cache.delete(cache.keys().next().value); // oldest first
     cache.set(key, (e = { data: null, fetchedAt: 0, attemptedAt: 0, error: null, inflight: null }));
   }
-  const due = e.data ? now - e.fetchedAt >= CACHE_MS && now - e.attemptedAt >= RETRY_MS : now - e.attemptedAt >= RETRY_MS;
+  const due = e.data ? now - e.fetchedAt >= CACHE_MS && now - e.attemptedAt >= RETRY_MS : now - e.attemptedAt >= RETRY_EMPTY_MS;
   if (due) refresh(e, Number(lat), Number(lon), now, fetcher);
   if (!e.data && e.inflight) {
     let timer;
