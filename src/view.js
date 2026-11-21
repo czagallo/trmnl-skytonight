@@ -32,7 +32,15 @@ function longestRun(list, pred) {
   return best;
 }
 
-// The moon's part in the verdict: is it up during the dark hours, and how bright.
+// When the moon crosses the horizon between dark hours a and b: the computed rise/set time when it falls in that
+// stretch, else interpolated from the sampled altitudes.
+function crossing(a, b, exact) {
+  if (exact && exact >= a.t - HOUR && exact <= b.t + HOUR) return exact;
+  return a.t + ((b.t - a.t) * a.moonAlt) / (a.moonAlt - b.moonAlt);
+}
+
+// The moon's part in the verdict: is it up during the dark hours, and how bright. The dark hours need not be one
+// stretch of moonlight: far north the moon can set after dusk and rise again before dawn.
 function moonNote(dark, moon, tz) {
   const up = dark.filter((h) => h.moonAlt > 0);
   const pct = Math.round(moon.fraction * 100);
@@ -40,13 +48,28 @@ function moonNote(dark, moon, tz) {
   const bright = moon.fraction >= BRIGHT_MOON;
   const label = bright ? 'Bright moon' : `Moon ${pct}%`;
   if (up.length === dark.length) return { text: `${label} all night`, bright };
-  const firstUp = dark[0].moonAlt > 0;
-  if (firstUp) {
-    const sets = moon.set && moon.set >= dark[0].t - HOUR ? moon.set : dark[up.length - 1].t + HOUR;
-    return { text: `${bright ? 'Bright moon' : 'Moon'} sets ${clock(sets, tz)}`, bright, moonlessFrom: sets };
+  const name = bright ? 'Bright moon' : 'Moon';
+
+  // Horizon crossings between consecutive dark hours.
+  const sets = [];
+  const rises = [];
+  for (let i = 1; i < dark.length; i++) {
+    const [a, b] = [dark[i - 1], dark[i]];
+    if (a.moonAlt > 0 && b.moonAlt <= 0) sets.push(crossing(a, b, moon.set));
+    if (a.moonAlt <= 0 && b.moonAlt > 0) rises.push(crossing(a, b, moon.rise));
   }
-  const rises = moon.rise && moon.rise >= dark[0].t - HOUR ? moon.rise : up[0].t;
-  return { text: `${bright ? 'Bright moon' : 'Moon'} rises ${clock(rises, tz)}`, bright, moonlessUntil: rises };
+  const upFirst = dark[0].moonAlt > 0;
+  const upLast = dark[dark.length - 1].moonAlt > 0;
+  if (upFirst && !upLast && sets.length === 1) return { text: `${name} sets ${clock(sets[0], tz)}`, bright, moonlessFrom: sets[0] };
+  if (!upFirst && upLast && rises.length === 1) return { text: `${name} rises ${clock(rises[0], tz)}`, bright, moonlessUntil: rises[0] };
+  // Up, down, up again: the moonless gap is what matters.
+  if (upFirst && upLast && sets.length === 1 && rises.length === 1) {
+    return { text: `${name} down ${clock(sets[0], tz)}–${clock(rises[0], tz)}`, bright, moonlessFrom: sets[0], moonlessUntil: rises[0] };
+  }
+  // Rises and sets inside the dark hours, or anything stranger: when it is up, first to last.
+  const from = upFirst ? dark[0].t : rises[0];
+  const to = upLast ? dark[dark.length - 1].t + HOUR : sets[sets.length - 1];
+  return { text: `${name} up ${clock(from, tz)}–${clock(to, tz)}`, bright };
 }
 
 // One-line verdict from the hourly cloud cover in the dark hours plus the moon. rating: great | good | fair | poor | null

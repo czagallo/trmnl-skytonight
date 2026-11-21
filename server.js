@@ -69,9 +69,18 @@ app.post('/webhooks/install-success', (req, res) => {
   res.json({ success: true });
 });
 
+// TRMNL has sent { user: { uuid } }, { user_uuid } and { uuid }. Anything that is not a well-formed uuid is ignored.
+function uninstallUuid(body) {
+  for (const raw of [body?.user?.uuid, body?.user_uuid, body?.uuid]) {
+    if (typeof raw === 'string' && UUID_RE.test(raw)) return raw;
+  }
+  return null;
+}
+
 app.post('/webhooks/uninstall', (req, res) => {
-  const uuid = req.body?.user?.uuid || req.body?.uuid;
-  if (uuid) store.delete(uuid);
+  const uuid = uninstallUuid(req.body);
+  if (!uuid) return res.status(400).json({ error: 'No user data' });
+  store.delete(uuid);
   console.log('Uninstall');
   res.json({ success: true });
 });
@@ -124,6 +133,7 @@ Latitude. Right-click a spot in Google Maps or OpenStreetMap to copy its coordin
 <button type="submit">Save</button>
 <a class="btn" href="${esc(back)}">Back to TRMNL</a>
 </form>
+<p><small>Cloud forecast: <a href="https://open-meteo.com/">Open-Meteo.com</a> (CC BY 4.0). Astronomy computed locally.</small></p>
 </body></html>`;
 }
 
@@ -189,14 +199,16 @@ app.post('/markup', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', users: store.size() });
+  res.json({ status: 'ok', users: store.size(), openMeteoCalls: weather.usage() });
 });
 
-// Keep the forecasts of every saved location (and the default) warm, so screens almost never wait on Open-Meteo.
+// Warm the caches at startup (the default location first, then every saved one), then every 30 minutes refresh only
+// the locations a screen asked for in the last two hours. weather.warm staggers the requests and stops at its share
+// of the Open-Meteo call budget, so the upstream load follows the devices that are actually running.
 function startBackgroundRefresh() {
-  const locations = () => [DEFAULT_LOCATION, ...store.all().map(locationOf)];
-  weather.warm(locations()).catch(() => {});
-  setInterval(() => weather.warm(locations()).catch(() => {}), weather.CACHE_MS).unref();
+  const saved = () => store.all().map(locationOf);
+  weather.warm([DEFAULT_LOCATION, ...saved()]).catch(() => {});
+  setInterval(() => weather.warm(weather.activeLocations()).catch(() => {}), weather.CACHE_MS).unref();
 }
 
 if (require.main === module) {

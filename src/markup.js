@@ -260,9 +260,9 @@ function verdictBlock(v, { size = 'large' } = {}) {
   return `<div class="st-verdict">
 <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-start;column-gap:8px;row-gap:2px;min-width:0">
 <span class="${pill}" style="flex:none;background:black;color:white;padding:1px 8px;border-radius:4px;font-weight:700;white-space:nowrap">${esc(vd.label)}</span>
-<span class="${head}" style="min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(main)}</span>
+<span class="${head}" style="min-width:0;overflow-wrap:anywhere">${esc(main)}</span>
 </div>
-${second ? `<span class="${sub}" style="display:block;margin-top:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${esc(second)}</span>` : ''}
+${second ? `<span class="${sub}" style="display:block;margin-top:2px;overflow-wrap:anywhere">${esc(second)}</span>` : ''}
 </div>`;
 }
 
@@ -457,9 +457,8 @@ grid-template-areas:"moon facts" "verdict verdict"}
 .screen--portrait .st-q .st-facts{align-items:center;text-align:center}
 .screen--portrait .st-q .st-rows{justify-content:center}
 /* TRMNL X has room for tonight's cloud chart under the moon. */
-.screen--lg .st-q{grid-template-columns:34% 1fr;grid-template-rows:auto auto minmax(0,1fr);grid-template-areas:"moon facts" "moon verdict" "chart chart";column-gap:24px;row-gap:12px}
-.screen--lg .st-q .st-facts{justify-content:end}
-.screen--lg.screen--portrait .st-q{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto auto minmax(0,0.9fr);grid-template-areas:"moon" "facts" "verdict" "chart";row-gap:12px}`;
+.screen--lg .st-q{grid-template-columns:34% 1fr;grid-template-rows:auto auto minmax(4em,1fr);grid-template-areas:"moon facts" "verdict verdict" "chart chart";column-gap:24px;row-gap:12px}
+.screen--lg.screen--portrait .st-q{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto auto minmax(4em,0.9fr);grid-template-areas:"moon" "facts" "verdict" "chart";row-gap:12px}`;
 
 function quadrant(v, ctx) {
   const m = v.night.moon;

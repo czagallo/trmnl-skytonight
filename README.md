@@ -35,10 +35,20 @@ at least two, *Fair* when it is clear but moonlit, *Poor* otherwise.
 ## Data and caching
 
 Forecasts are cached per location rounded to 0.01° (about 1 km) for 30 minutes, stale-while-revalidate: a screen is
-always answered from cache and the refresh happens in the background. Only the very first request for a new location
-waits for Open-Meteo, at most 4 seconds; after that the screen shows *Cloud forecast unavailable* and everything else.
-The server keeps the forecasts of all saved locations warm. Failed requests are retried after 5 minutes at the
-earliest.
+always answered from cache and the refresh happens in the background. Only the first request for a new location (or
+one whose forecast is more than 3 hours old) waits for Open-Meteo, at most 4 seconds; after that the screen shows
+*Cloud forecast unavailable* and everything else. Failed requests are retried after 5 minutes at the earliest (1 minute
+when nothing is cached).
+
+At startup the server warms the default location and every saved one. After that it refreshes, every 30 minutes, only
+the locations a screen asked for in the last 2 hours, two at a time with a second between requests.
+
+Open-Meteo's free API allows fewer than 10,000 calls per day, 5,000 per hour and 600 per minute, for non-commercial
+use, with attribution (CC BY 4.0) ([terms](https://open-meteo.com/en/terms)); one forecast request here counts as one
+call. The server enforces its own budget of `OPEN_METEO_DAILY_CALLS` (default 5,000 per UTC day) and
+`OPEN_METEO_HOURLY_CALLS` (default 1,000 per UTC hour). Background refreshes stop at 80 % of either, leaving the rest
+for screen requests; once the budget is used up, screens keep their cached forecast or show *Cloud forecast
+unavailable* until it refills. `/health` shows the calls used.
 
 The ISS is not shown: it would need orbital elements from another service plus an SGP4 library.
 

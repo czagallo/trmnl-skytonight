@@ -264,6 +264,86 @@ test('a slow upstream with an empty cache is cut off after waitMs', async () => 
   assert.deepEqual((await weather.getClouds(3, 4, { fetcher: slow })).data.cover, [1]);
 });
 
+test('the Open-Meteo call budget is enforced: no request beyond it, cached data stays on screen', async () => {
+  weather.clearCache();
+  weather.setBudget({ daily: 2, hourly: 2 });
+  const now = NOV19;
+  let calls = 0;
+  const ok = async () => {
+    calls++;
+    return { times: [now], cover: [calls] };
+  };
+  await weather.getClouds(10, 10, { now, fetcher: ok });
+  await weather.getClouds(11, 11, { now, fetcher: ok });
+  const over = await weather.getClouds(12, 12, { now, fetcher: ok });
+  assert.equal(calls, 2);
+  assert.deepEqual([over.data, over.error], [null, 'budget']);
+  // A stale location keeps its forecast when the budget says no.
+  const stale = await weather.getClouds(10, 10, { now: now + 31 * 60e3, fetcher: ok });
+  assert.deepEqual([stale.data.cover, stale.error, calls], [[1], 'budget', 2]);
+  // The hourly budget refills the next hour, the daily one the next UTC day.
+  weather.setBudget({ daily: 3, hourly: 1 });
+  await weather.getClouds(13, 13, { now, fetcher: ok });
+  await weather.getClouds(14, 14, { now, fetcher: ok });
+  assert.equal(calls, 3);
+  await weather.getClouds(14, 14, { now: now + 2 * H, fetcher: ok });
+  assert.equal(calls, 4);
+  weather.clearCache();
+});
+
+test('a forecast older than three hours is refreshed before the screen is answered', async () => {
+  weather.clearCache();
+  const now = NOV19;
+  let n = 0;
+  const ok = async () => ({ times: [now], cover: [++n] });
+  await weather.getClouds(20, 20, { now, fetcher: ok });
+  assert.deepEqual((await weather.getClouds(20, 20, { now: now + 40 * 60e3, fetcher: ok })).data.cover, [1]); // stale, served
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual((await weather.getClouds(20, 20, { now: now + 4 * H, fetcher: ok })).data.cover, [3]); // waited
+});
+
+test('warm refreshes only due locations, staggered, within its share of the budget', async () => {
+  weather.clearCache();
+  weather.setBudget({ daily: 5, hourly: 100 }); // warming may use 4
+  const now = NOV19;
+  let running = 0;
+  let peak = 0;
+  const calls = [];
+  const fetcher = async (lat) => {
+    calls.push(lat);
+    peak = Math.max(peak, ++running);
+    await new Promise((r) => setImmediate(r));
+    running--;
+    return { times: [now], cover: [1] };
+  };
+  const sleeps = [];
+  const sleep = async (ms) => sleeps.push(ms);
+  const locs = [1, 2, 3, 4, 5, 6, 2].map((x) => ({ lat: x, lon: x }));
+  assert.equal(await weather.warm(locs, { fetcher, now: () => now, sleep }), 4);
+  assert.deepEqual(calls.sort(), [1, 2, 3, 4]);
+  assert.ok(peak <= 2, `concurrency ${peak}`);
+  assert.ok(sleeps.length >= 2 && sleeps.every((ms) => ms === 1000));
+  // The rest of the budget is still there for a screen.
+  assert.notEqual((await weather.getClouds(9, 9, { now, fetcher })).data, null);
+  assert.equal((await weather.getClouds(8, 8, { now, fetcher })).error, 'budget');
+  // Fresh entries are not fetched again.
+  weather.setBudget({ daily: 100, hourly: 100 });
+  assert.equal(await weather.warm(locs, { fetcher, now: () => now + 10 * 60e3, sleep }), 2); // only 5 and 6
+  weather.clearCache();
+});
+
+test('only locations a screen asked for recently are kept warm', async () => {
+  weather.clearCache();
+  const now = NOV19;
+  const ok = async () => ({ times: [now], cover: [1] });
+  await weather.warm([{ lat: 30, lon: 30 }], { fetcher: ok, now: () => now }); // startup warm: not a request
+  await weather.getClouds(31, 31, { now, fetcher: ok });
+  await weather.getClouds(32, 32, { now: now - 3 * H, fetcher: ok });
+  assert.deepEqual(weather.activeLocations(now), [{ lat: 31, lon: 31 }]);
+  assert.deepEqual(weather.activeLocations(now + weather.ACTIVE_MS), []);
+  weather.clearCache();
+});
+
 // ---------------------------------------------------------------------------
 // Verdict and view
 // ---------------------------------------------------------------------------
@@ -298,6 +378,15 @@ test('verdict: a bright moon all night turns a clear night into a fair one', () 
   const setting = verdict(nightWith(Array(13).fill(0), { moonUp: (i) => i < 4, fraction: 0.7 }), null, 'UTC');
   assert.match(setting.moon, /^Bright moon sets \d\d:\d\d$/);
   assert.equal(verdict(nightWith(Array(13).fill(0), { fraction: 0.02 }), null, 'UTC').moon, 'No moon');
+});
+
+test('verdict: moonlight that is not one stretch (sets and rises again, or rises and sets)', () => {
+  const upDownUp = verdict(nightWith(Array(13).fill(0), { moonUp: (i) => i < 3 || i > 9, fraction: 0.7 }), null, 'UTC');
+  assert.equal(upDownUp.moon, 'Bright moon down 19:30–02:30');
+  const middle = verdict(nightWith(Array(13).fill(0), { moonUp: (i) => i > 3 && i < 8, fraction: 0.3 }), null, 'UTC');
+  assert.equal(middle.moon, 'Moon up 20:30–00:30');
+  const rising = verdict(nightWith(Array(13).fill(0), { moonUp: (i) => i > 9, fraction: 0.3 }), null, 'UTC');
+  assert.equal(rising.moon, 'Moon rises 02:30');
 });
 
 test('longestRun finds the longest stretch', () => {
@@ -372,6 +461,28 @@ test('the full layout shows the moon, verdict, chart, sun and planets', async ()
   assert.ok(renderAll(v, { baseUrl: 'https://x.example' }).markup_quadrant.includes('Clear after 22:00'));
 });
 
+test('the verdict wraps instead of being cut off, and the X quadrant keeps room for the chart', async () => {
+  const v = await buildView({ lat: 52.52, lon: 13.405, place: 'Berlin' }, { now: Date.UTC(2026, 11, 2, 1), timeZone: 'Europe/Berlin', getClouds: cloudsFrom(PATTERNS.patchy, Date.UTC(2026, 11, 2, 1)) });
+  assert.equal(v.verdict.clouds, 'Mostly cloudy, short gaps');
+  const out = renderAll(v, { baseUrl: 'https://x.example' });
+  for (const k of LAYOUT_KEYS) assert.doesNotMatch(out[k], /text-overflow:ellipsis/, k);
+  assert.match(out.markup_quadrant, /"verdict verdict" "chart chart"/);
+  assert.match(out.markup_quadrant, /minmax\(4em,1fr\)/);
+  assert.match(out.markup_quadrant, /class="hidden lg:block"/);
+});
+
+test('any span that ellipsizes is display:block (framework .label/.title are flex, where ellipsis does nothing)', async () => {
+  const all = [...(await views()), ['long place', await buildView({ ...VIENNA, place: 'Bad Münstereifel-Iversheim Sternwarte XY' }, { now: NOV19, timeZone: VIE, getClouds: cloudsFrom(PATTERNS.patchy) })]];
+  for (const [name, v] of all) {
+    const out = renderAll(v, { baseUrl: 'https://x.example' });
+    for (const k of LAYOUT_KEYS) {
+      for (const tag of out[k].match(/<[^>]*text-overflow:\s*ellipsis[^>]*>/g) || []) {
+        assert.match(tag, /display:\s*block/, `${name} ${k}: ${tag}`);
+      }
+    }
+  }
+});
+
 test('place and instance names are escaped, including Liquid braces', async () => {
   const v = await buildView({ ...VIENNA, place: '<script>{{ x }}</script>' }, { now: NOV19, timeZone: VIE, getClouds: noClouds });
   const out = renderAll(v, { baseUrl: 'https://x.example' });
@@ -438,7 +549,9 @@ test('server: health, settings page, validation, saving and markup', async (t) =
   const base = `http://127.0.0.1:${server.address().port}`;
   const form = (o) => ({ method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(o).toString() });
 
-  assert.deepEqual(await (await fetch(`${base}/health`)).json(), { status: 'ok', users: 0 });
+  const health = await (await fetch(`${base}/health`)).json();
+  assert.deepEqual([health.status, health.users], ['ok', 0]);
+  assert.equal(typeof health.openMeteoCalls.day, 'number');
   assert.equal((await fetch(`${base}/manage`)).status, 400);
   assert.equal((await fetch(`${base}/manage?uuid=${encodeURIComponent('../x')}`)).status, 400);
   const page = await (await fetch(`${base}/manage?uuid=abc-123`)).text();
@@ -463,6 +576,15 @@ test('server: health, settings page, validation, saving and markup', async (t) =
   const anon = await (await fetch(`${base}/markup`, form({}))).json();
   assert.match(anon.markup, /Vienna/);
 
-  await fetch(`${base}/webhooks/uninstall`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: { uuid: 'abc-123' } }) });
-  assert.deepEqual(await (await fetch(`${base}/health`)).json(), { status: 'ok', users: 0 });
+  const users = async () => (await (await fetch(`${base}/health`)).json()).users;
+  const uninstall = (body) => fetch(`${base}/webhooks/uninstall`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  for (const body of [{}, { user: { uuid: '../x' } }, { uuid: ['abc-123'] }, { user: { uuid: { $ne: 1 } } }, { uuid: 'x'.repeat(65) }]) {
+    assert.equal((await uninstall(body)).status, 400, JSON.stringify(body));
+  }
+  assert.equal(await users(), 1);
+  assert.equal((await uninstall({ user_uuid: 'abc-123' })).status, 200);
+  assert.equal(await users(), 0);
+  await fetch(`${base}/manage/save`, form({ uuid: 'abc-123', lat: '1', lon: '2' }));
+  assert.equal((await uninstall({ user: { uuid: 'abc-123' } })).status, 200);
+  assert.equal(await users(), 0);
 });
